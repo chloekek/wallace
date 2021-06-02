@@ -1,0 +1,6 @@
+[workspace]
+members = [
+    "wallace_fsutil",
+    "wallace_sha256",
+    "wallace_volume",
+]

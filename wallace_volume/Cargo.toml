@@ -1,0 +1,14 @@
+[package]
+name = "wallace_volume"
+version = "0.0.0"
+edition = "2018"
+
+[dependencies.libc]
+default-features = false
+version = "=0.2.95"
+
+[dependencies.wallace_fsutil]
+path = "../wallace_fsutil"
+
+[dependencies.wallace_sha256]
+path = "../wallace_sha256"

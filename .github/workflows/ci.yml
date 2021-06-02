@@ -1,0 +1,13 @@
+"on":
+  - "push"
+  - "pull_request"
+
+"jobs":
+  "build-test-doc":
+    "runs-on": "ubuntu-20.04"
+    "steps":
+      - "uses": "actions/checkout@v2"
+      - "uses": "cachix/install-nix-action@v13"
+      - "run": "nix-shell --pure --run 'cargo build'"
+      - "run": "nix-shell --pure --run 'cargo test'"
+      - "run": "nix-shell --pure --run 'cargo doc'"
