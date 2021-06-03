@@ -70,7 +70,8 @@ impl Volume
     ///  5. The source path is renamed to the destination path.
     ///  6. The source file is made read-only.
     ///  7. The hash is returned, to be used as the identifier of the object.
-    pub fn insert(&self, source_path: impl AsRef<Path>) -> Result<Hash>
+    pub fn insert_from_file(&self, source_path: impl AsRef<Path>)
+        -> Result<Hash>
     {
         // Prevent any funny business from happening.
         // O_NOCTTY:   Do not make any TTY become the controlling terminal.
@@ -199,7 +200,7 @@ mod tests
     }
 
     #[test]
-    fn test_insert_get()
+    fn test_insert_from_file_get()
     {
         let parent = make_temp_dir("test_insert_get").unwrap();
 
@@ -218,14 +219,14 @@ mod tests
         // Write test files.
         write(&path_input1, "hello").unwrap();
         write(&path_input2, "你好").unwrap();
-        let hash1_object1 = volume.insert(&path_input1).unwrap();
-        let hash1_object2 = volume.insert(&path_input2).unwrap();
+        let hash1_object1 = volume.insert_from_file(&path_input1).unwrap();
+        let hash1_object2 = volume.insert_from_file(&path_input2).unwrap();
 
         // Insert them again.
         write(&path_input1, "hello").unwrap();
         write(&path_input2, "你好").unwrap();
-        let hash2_object1 = volume.insert(&path_input1).unwrap();
-        let hash2_object2 = volume.insert(&path_input2).unwrap();
+        let hash2_object1 = volume.insert_from_file(&path_input1).unwrap();
+        let hash2_object2 = volume.insert_from_file(&path_input2).unwrap();
 
         // Check that the hashes were the same.
         assert_eq!(hash1_object1, hash2_object1);
