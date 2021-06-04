@@ -4,14 +4,22 @@ use wallace_sha256::Sha256;
 
 /// Hash of an object used to uniquely identify it.
 ///
+/// For more information about hashes,
+/// refer to the section about
+/// content addressable storage
+/// in the crate documentation.
+///
 /// The [`Display`][`fmt::Display`] impl formats the hash
 /// as a 64-digit lowercase hexadecimal number.
+/// This hexadecimal format is used consistently
+/// when hashes need to be communicated as text.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct Hash
 {
     /// The bytes that make up the hash.
     /// These are _not_ the bytes that the hash was computed from;
     /// those bytes cannot be recovered from the hash alone.
+    /// You typically do not need to access this field.
     pub bytes: [u8; 32],
 }
 

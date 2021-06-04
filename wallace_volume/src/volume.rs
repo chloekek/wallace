@@ -19,6 +19,14 @@ use std::path::PathBuf;
 use wallace_fsutil as fsutil;
 
 /// Handle to an opened volume.
+///
+/// See the [crate documentation](index.html)
+/// for more information on what volumes are.
+///
+/// The volume handle is backed by a file descriptor,
+/// and it will continue to be usable just fine
+/// if the path to the volume’s directory changes
+/// (although this is a rather obscure use case).
 pub struct Volume
 {
     directory: File,
@@ -29,7 +37,7 @@ impl Volume
     /// Create a new volume at the given path,
     /// which must not yet exist.
     ///
-    /// This does not open the volume.
+    /// The volume starts out with no objects stored in it.
     /// You can open the volume with [`Volume::open`].
     pub fn create(path: impl Into<PathBuf>) -> Result<()>
     {
@@ -44,8 +52,8 @@ impl Volume
     }
 
     /// Open the volume at the given path,
-    /// which must already be a volume
-    /// created previously by [`Volume::create`].
+    /// which must already be created previously
+    /// using the [`Volume::create`] method.
     pub fn open(path: impl AsRef<Path>) -> Result<Self>
     {
         let directory =
@@ -56,11 +64,38 @@ impl Volume
         Ok(Self{directory})
     }
 
-    /// Like [`Volume::insert_from_path`], but given an already opened file.
+    /// Insert an object into the volume by
+    /// creating a hard link to a given file.
+    ///
+    /// This method will read the file to determine the hash of the object.
+    /// It will then create the appropriate hard link in the volume.
+    /// Finally, it will make the file read-only using `chmod`.
     ///
     /// The path from which the file was opened, if any, is irrelevant.
     /// It could even be a file opened with `O_TMPFILE`,
     /// or a file that was sent over a Unix domain socket.
+    ///
+    /// # Preconditions
+    ///
+    /// This method has a few preconditions, which must all hold:
+    ///
+    ///  - The file must be a regular file.
+    ///  - The file must be owned by the caller.
+    ///  - The file must be readable.
+    ///
+    /// Violating any precondition will cause this method to return an error,
+    /// and leave the volume in the state it was prior to calling this method.
+    ///
+    /// # Special considerations
+    ///
+    /// It is paramount that the file will not be modified
+    /// after this method starts to do its work.
+    /// Such modifications may result in a corrupted volume.
+    /// This includes modifications to any existing hard links.
+    ///
+    /// If the object already exists in the volume,
+    /// the existing file is retained, and the given file is ignored.
+    /// However, the given file will still be read to compute its hash.
     pub fn insert_from_file(&self, mut file: File) -> Result<Hash>
     {
         // Verify that the file is a regular file.
@@ -104,9 +139,8 @@ impl Volume
         Ok(hash)
     }
 
-    /// Like [`Volume::insert_from_path`],
-    /// but drain the given reader into a temporary file,
-    /// and then insert the temporary file as an object.
+    /// Drain the given reader into a temporary file,
+    /// and proceed as in [`Volume::insert_from_file`].
     pub fn insert_from_reader(&self, reader: &mut impl Read) -> Result<Hash>
     {
         // By using O_TMPFILE, Linux will create a file with no path.
@@ -130,23 +164,12 @@ impl Volume
         self.insert_from_file(tmpfile)
     }
 
-    /// Insert an object as a hard link to the file at the given path.
+    /// Open the file at the given path,
+    /// and proceed as in [`Volume::insert_from_file`].
     ///
-    /// The file is verified to be a regular file.
-    /// Symbolic links, directories, and other file types are not supported.
-    /// If this verification fails, then this function won’t do anything.
-    ///
-    /// The file must be readable, otherwise we cannot compute the hash.
-    /// This function may change the permission bits of the file.
-    /// If so, you should not change the permission bits of the file anymore.
-    /// In fact, it would be best if you remove the path after,
-    /// so as to avoid accidentally changing the file through it.
-    ///
-    /// This function assumes that the file contents
-    /// remain untouched while the function is running.
-    /// After the function returns successfully,
-    /// the file contents should not be changed.
-    /// Doing so would corrupt the volume.
+    /// If the file is a fifo, this method won’t block waiting for a writer.
+    /// It will immediately return an error because fifos are not regular files.
+    /// Similar shenanigans with other exotic file types are also avoided.
     pub fn insert_from_path(&self, path: impl AsRef<Path>) -> Result<Hash>
     {
         // First we are going to open the file.
@@ -175,12 +198,13 @@ impl Volume
         self.insert_from_file(file)
     }
 
-    /// Retrieve a read-only handle to an object,
+    /// Retrieve a read-only handle to an object’s byte array,
     /// as well as the size of the object in bytes.
     ///
     /// If the object does not exist, this method returns [`None`].
     /// The returned reader/seeker is backed by a file,
-    /// but it is not possible to recover the [`File`] interface.
+    /// but this fact is hidden using impl trait
+    /// because the file should not be modified.
     pub fn get(&self, hash: Hash) -> Result<Option<(impl Read + Seek, u64)>>
     {
         // Prevent any funny business from happening.
