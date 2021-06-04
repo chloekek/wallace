@@ -130,13 +130,20 @@ impl Volume
         let open_flags
             = libc::O_NOCTTY    // We don’t want a controlling terminal.
             | libc::O_NOFOLLOW  // We don’t want to follow symbolic links.
-            | libc::O_CLOEXEC;  // We don’t want to keep the file open on exec.
+            | libc::O_CLOEXEC   // We don’t want to keep the file open on exec.
+            | libc::O_NONBLOCK; // Don’t block if the file is a fifo.
 
         let file =
             OpenOptions::new()
             .read(true)
             .custom_flags(open_flags)
             .open(&path)?;
+
+        // Switch the file back to blocking mode.
+        // We only needed non-blocking mode to
+        // open a potential fifo without blocking.
+        let fd_flags = fsutil::fcntl_getfd(&file)?;
+        fsutil::fcntl_setfd(&file, fd_flags & !libc::O_NONBLOCK)?;
 
         self.insert_from_file(file)
     }
@@ -195,6 +202,7 @@ mod tests
     use std::fs::write;
     use std::io::Cursor;
     use std::io::ErrorKind::AlreadyExists;
+    use std::os::unix::fs::symlink;
     use super::*;
 
     /// Create a directory for temporarily storing test data.
@@ -231,6 +239,42 @@ mod tests
         // Should fail with EEXIST.
         assert_eq!(result_reg.err().map(|e| e.kind()), Some(AlreadyExists));
         assert_eq!(result_dir.err().map(|e| e.kind()), Some(AlreadyExists));
+    }
+
+    #[test]
+    fn test_insert_from_path_bad_type()
+    {
+        let parent = make_temp_dir("test_insert_from_path_bad_type").unwrap();
+
+        // Create paths for test files and volume.
+        let mut path_input_dir  = parent.clone();
+        let     path_input_chr  = "/dev/null";
+        let mut path_input_fifo = parent.clone();
+        let mut path_input_lnk  = parent.clone();
+        let mut path_input_sock = parent.clone();
+        let mut path_volume = parent;
+        path_input_dir.push("input_dir");
+        path_input_fifo.push("input_fifo");
+        path_input_lnk.push("input_lnk");
+        path_input_sock.push("input_sock");
+        path_volume.push("volume");
+
+        // Create and open the volume.
+        Volume::create(&path_volume).unwrap();
+        let volume = Volume::open(path_volume).unwrap();
+
+        // Create test files.
+        create_dir(&path_input_dir).unwrap();
+        fsutil::mknod(&path_input_fifo, libc::S_IFIFO  | 0o644, 0).unwrap();
+        symlink("/etc/passwd", &path_input_lnk).unwrap();
+        fsutil::mknod(&path_input_sock, libc::S_IFSOCK | 0o644, 0).unwrap();
+
+        // Check that these cannot be inserted.
+        assert!(volume.insert_from_path(path_input_dir) .is_err());
+        assert!(volume.insert_from_path(path_input_chr) .is_err());
+        assert!(volume.insert_from_path(path_input_fifo).is_err());
+        assert!(volume.insert_from_path(path_input_lnk) .is_err());
+        assert!(volume.insert_from_path(path_input_sock).is_err());
     }
 
     #[test]
