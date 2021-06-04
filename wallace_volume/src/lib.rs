@@ -2,7 +2,8 @@
 //! where an object is a byte array identified by its hash.
 //!
 //! Objects can be insert into the volume using
-//! the [`Volume::insert_from_path`] method.
+//! the [`Volume::insert_from_file`]
+//! or [`Volume::insert_from_path`] method.
 //! They can later be retrieved using the [`Volume::get`] method.
 //!
 //! Internally, a volume is a directory on the file system.

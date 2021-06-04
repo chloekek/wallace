@@ -4,12 +4,15 @@ use std::fs::OpenOptions;
 use std::fs::Permissions;
 use std::fs::create_dir;
 use std::io::Error;
+use std::io::ErrorKind::AlreadyExists;
 use std::io::ErrorKind::NotFound;
 use std::io::Read;
 use std::io::Result;
 use std::io::Seek;
+use std::io::SeekFrom;
 use std::os::unix::fs::OpenOptionsExt;
 use std::os::unix::fs::PermissionsExt;
+use std::os::unix::io::AsRawFd;
 use std::path::Path;
 use std::path::PathBuf;
 use wallace_fsutil as fsutil;
@@ -52,59 +55,90 @@ impl Volume
         Ok(Self{directory})
     }
 
-    /// Insert the contents of a given file as an object into the volume,
-    /// and remove the file from the given source path.
+    /// Like [`Volume::insert_from_path`], but given an already opened file.
+    ///
+    /// The path from which the file was opened, if any, is irrelevant.
+    /// It could even be a file opened with `O_TMPFILE`,
+    /// or a file that was sent over a Unix domain socket.
+    pub fn insert_from_file(&self, mut file: File) -> Result<Hash>
+    {
+        // Verify that the file is a regular file.
+        // If not, we cannot hard link it as an object.
+        let metadata = file.metadata()?;
+        if !metadata.is_file() {
+            // TODO: Return a more descriptive error.
+            return Err(Error::from_raw_os_error(libc::EISDIR));
+        }
+
+        // We must seek the file to the beginning to start hashing it.
+        // The file offset may be positioned anywhere prior to the call.
+        file.seek(SeekFrom::Start(0))?;
+        let hash = Hash::from_reader(&mut file)?;
+        let path = format!("stash/{}", hash);
+
+        // Unfortunately, the AT_EMPTY_PATH flag requires a special capability.
+        // Fortunately, if /proc is available, we can apply this cute trick.
+        // It is documented in the linkat(2) man page.
+        let proc_path = format!("/proc/self/fd/{}", file.as_raw_fd());
+        let linkat_result = fsutil::linkat(
+            &libc::AT_FDCWD, proc_path, // old path
+            &self.directory, path,      // new path
+            libc::AT_SYMLINK_FOLLOW,    // see linkat(2)
+        );
+
+        // If the object already exists, then that is totally fine.
+        // We will not touch this file anymore, and use the existing one.
+        match linkat_result {
+            Ok(()) => (),
+            Err(err) if err.kind() == AlreadyExists => (),
+            Err(err) => return Err(err),
+        }
+
+        // Make the file read-only to prevent tampering.
+        // Not fool proof, as it can be chmodded again,
+        // but that would be PEBKAC and not our problem.
+        let readonly = Permissions::from_mode(0o400);
+        file.set_permissions(readonly)?;
+
+        Ok(hash)
+    }
+
+    /// Insert an object as a hard link to the file at the given path.
+    ///
+    /// The file is verified to be a regular file.
+    /// Symbolic links, directories, and other file types are not supported.
+    /// If this verification fails, then this function won’t do anything.
+    ///
+    /// The file must be readable, otherwise we cannot compute the hash.
+    /// This function may change the permission bits of the file.
+    /// If so, you should not change the permission bits of the file anymore.
+    /// In fact, it would be best if you remove the path after,
+    /// so as to avoid accidentally changing the file through it.
     ///
     /// This function assumes that the file contents
     /// remain untouched while the function is running.
     /// After the function returns successfully,
     /// the file contents should not be changed.
     /// Doing so would corrupt the volume.
-    ///
-    /// The insertion procedure operates as follows:
-    ///
-    ///  1. The source file is opened in read-only mode.
-    ///  2. Some sanity checks on the source file are performed.
-    ///  3. The cryptographic hash of the source file is computed.
-    ///  4. This hash is used to compute the destination path.
-    ///  5. The source path is renamed to the destination path.
-    ///  6. The source file is made read-only.
-    ///  7. The hash is returned, to be used as the identifier of the object.
-    pub fn insert_from_path(&self, source_path: impl AsRef<Path>)
-        -> Result<Hash>
+    pub fn insert_from_path(&self, path: impl AsRef<Path>) -> Result<Hash>
     {
-        // Prevent any funny business from happening.
-        // O_NOCTTY:   Do not make any TTY become the controlling terminal.
-        // O_NOFOLLOW: Do not follow any symbolic links.
-        let open_flags = libc::O_NOCTTY | libc::O_NOFOLLOW;
+        // First we are going to open the file.
+        // Then we will proceed as in insert_from_file.
+        // It is amazing how little we have to do with the path.
 
-        // Open the source file.
-        let mut file =
+        // We pass the following flags to the open syscall:
+        let open_flags
+            = libc::O_NOCTTY    // We don’t want a controlling terminal.
+            | libc::O_NOFOLLOW  // We don’t want to follow symbolic links.
+            | libc::O_CLOEXEC;  // We don’t want to keep the file open on exec.
+
+        let file =
             OpenOptions::new()
             .read(true)
             .custom_flags(open_flags)
-            .open(&source_path)?;
+            .open(&path)?;
 
-        // Check that the source file is regular.
-        let metadata = file.metadata()?;
-        if !metadata.is_file() {
-            return Err(Error::from_raw_os_error(libc::EISDIR));
-        }
-
-        // Compute the hash of the source file.
-        let hash = Hash::from_reader(&mut file)?;
-
-        // Rename the source path to the destination path.
-        let destination_path = format!("stash/{}", hash);
-        fsutil::renameat(
-            &libc::AT_FDCWD, source_path,
-            &self.directory, destination_path,
-        )?;
-
-        // Set the file permissions to read-only.
-        file.set_permissions(Permissions::from_mode(0o400))?;
-
-        Ok(hash)
+        self.insert_from_file(file)
     }
 
     /// Retrieve a read-only handle to an object,
@@ -223,8 +257,6 @@ mod tests
         let hash1_object2 = volume.insert_from_path(&path_input2).unwrap();
 
         // Insert them again.
-        write(&path_input1, "hello").unwrap();
-        write(&path_input2, "你好").unwrap();
         let hash2_object1 = volume.insert_from_path(&path_input1).unwrap();
         let hash2_object2 = volume.insert_from_path(&path_input2).unwrap();
 
