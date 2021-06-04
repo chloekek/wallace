@@ -10,6 +10,7 @@ use std::io::Read;
 use std::io::Result;
 use std::io::Seek;
 use std::io::SeekFrom;
+use std::io::copy;
 use std::os::unix::fs::OpenOptionsExt;
 use std::os::unix::fs::PermissionsExt;
 use std::os::unix::io::AsRawFd;
@@ -101,6 +102,32 @@ impl Volume
         file.set_permissions(readonly)?;
 
         Ok(hash)
+    }
+
+    /// Like [`Volume::insert_from_path`],
+    /// but drain the given reader into a temporary file,
+    /// and then insert the temporary file as an object.
+    pub fn insert_from_reader(&self, reader: &mut impl Read) -> Result<Hash>
+    {
+        // By using O_TMPFILE, Linux will create a file with no path.
+        // We can then write this file and pass it to insert_from_file.
+        let open_flags = libc::O_RDWR | libc::O_TMPFILE;
+
+        // We must write the file and then read it,
+        // so we will use this open mode.
+        let open_mode = 0o600;
+
+        // We must still pass some path to openat.
+        // Linux uses this to determine the file system
+        // on which the file is to be stored.
+        // We pass the path to the volume directory.
+        let mut tmpfile = fsutil::openat(&self.directory, ".",
+                                         open_flags, open_mode)?;
+
+        // Drain the entire reader into the temporary file.
+        copy(reader, &mut tmpfile)?;
+
+        self.insert_from_file(tmpfile)
     }
 
     /// Insert an object as a hard link to the file at the given path.
@@ -275,6 +302,33 @@ mod tests
         assert!(volume.insert_from_path(path_input_fifo).is_err());
         assert!(volume.insert_from_path(path_input_lnk) .is_err());
         assert!(volume.insert_from_path(path_input_sock).is_err());
+    }
+
+    #[test]
+    fn test_insert_from_reader_get()
+    {
+        let parent = make_temp_dir("test_insert_from_reader_get").unwrap();
+
+        // Create path for volume.
+        let mut path_volume = parent;
+        path_volume.push("volume");
+
+        // Create and open the volume.
+        Volume::create(&path_volume).unwrap();
+        let volume = Volume::open(path_volume).unwrap();
+
+        // Write test object.
+        let mut cursor = Cursor::new(b"hello");
+        let hash = volume.insert_from_reader(&mut cursor).unwrap();
+
+        // Read the inserted object.
+        let (mut read, size) = volume.get(hash).unwrap().unwrap();
+        let mut data = Vec::new();
+        read.read_to_end(&mut data).unwrap();
+
+        // Check that the object is as expected.
+        assert_eq!(data, b"hello");
+        assert_eq!(size, 5);
     }
 
     #[test]
