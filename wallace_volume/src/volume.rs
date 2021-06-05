@@ -109,7 +109,7 @@ impl Volume
         // We must seek the file to the beginning to start hashing it.
         // The file offset may be positioned anywhere prior to the call.
         file.seek(SeekFrom::Start(0))?;
-        let hash = Hash::from_reader(&mut file)?;
+        let hash = Hash::compute_from_reader(&mut file)?;
         let path = format!("objects/{}", hash);
 
         // Unfortunately, the AT_EMPTY_PATH flag requires a special capability.
@@ -399,7 +399,7 @@ mod tests
 
         // Check that getting a non-existing object succeeds.
         let mut cursor = Cursor::new(&mut []);
-        let nonexistent = Hash::from_reader(&mut cursor).unwrap();
+        let nonexistent = Hash::compute_from_reader(&mut cursor).unwrap();
         let result = volume.get(nonexistent).unwrap();
         assert!(result.is_none());
     }

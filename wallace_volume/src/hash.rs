@@ -28,7 +28,7 @@ pub struct Hash
 impl Hash
 {
     /// Read all bytes from the reader and compute their hash.
-    pub fn from_reader(r: &mut impl io::Read) -> io::Result<Self>
+    pub fn compute_from_reader(r: &mut impl io::Read) -> io::Result<Self>
     {
         let mut sha256 = Sha256::new();
         io::copy(r, &mut sha256)?;
@@ -87,7 +87,7 @@ mod tests
     use std::io::Cursor;
 
     #[test]
-    fn test_from_reader()
+    fn test_compute_from_reader()
     {
         let table: &[(&[_], _)] = &[
             (b"",
@@ -99,7 +99,7 @@ mod tests
         ];
         for &(input, expected) in table {
             let mut cursor = Cursor::new(input);
-            let actual_hash = Hash::from_reader(&mut cursor).unwrap();
+            let actual_hash = Hash::compute_from_reader(&mut cursor).unwrap();
             let actual = format!("{}", actual_hash);
             assert_eq!(actual, expected);
         }
