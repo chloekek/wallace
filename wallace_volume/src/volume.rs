@@ -45,7 +45,7 @@ impl Volume
 
         create_dir(&pathbuf)?;
 
-        pathbuf.push("stash");
+        pathbuf.push("objects");
         create_dir(&pathbuf)?;
 
         Ok(())
@@ -110,7 +110,7 @@ impl Volume
         // The file offset may be positioned anywhere prior to the call.
         file.seek(SeekFrom::Start(0))?;
         let hash = Hash::from_reader(&mut file)?;
-        let path = format!("stash/{}", hash);
+        let path = format!("objects/{}", hash);
 
         // Unfortunately, the AT_EMPTY_PATH flag requires a special capability.
         // Fortunately, if /proc is available, we can apply this cute trick.
@@ -219,7 +219,7 @@ impl Volume
         let open_mode = 0;
 
         // Open the file backing the object.
-        let path = format!("stash/{}", hash);
+        let path = format!("objects/{}", hash);
         let file_result = fsutil::openat(&self.directory, path,
                                          open_flags, open_mode);
 
