@@ -18,6 +18,10 @@ name = "wallace_sha256"
 version = "0.0.0"
 
 [[package]]
+name = "wallace_smb2"
+version = "0.0.0"
+
+[[package]]
 name = "wallace_volume"
 version = "0.0.0"
 dependencies = [

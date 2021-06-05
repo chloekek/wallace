@@ -1,0 +1,4 @@
+[package]
+name = "wallace_smb2"
+version = "0.0.0"
+edition = "2018"

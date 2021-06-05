@@ -2,5 +2,6 @@
 members = [
     "wallace_fsutil",
     "wallace_sha256",
+    "wallace_smb2",
     "wallace_volume",
 ]
