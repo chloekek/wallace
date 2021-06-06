@@ -35,6 +35,31 @@ impl Hash
         let bytes = sha256.finalize();
         Ok(Self{bytes})
     }
+
+    /// Similar to the [`FromStr`] impl,
+    /// but takes `[u8]` instead of [`str`].
+    pub fn from_ascii(s: &[u8]) -> Result<Self, InvalidHash>
+    {
+        if s.len() != 64 {
+            return Err(InvalidHash);
+        }
+
+        fn hex(c: u8) -> Result<u8, InvalidHash>
+        {
+            match c {
+                b'0' ..= b'9' => Ok(c - b'0'),
+                b'a' ..= b'f' => Ok(c - b'a' + 10),
+                _ => Err(InvalidHash),
+            }
+        }
+
+        let mut bytes = [0; 32];
+        for (i, pair) in s.chunks(2).enumerate() {
+            bytes[i] = hex(pair[0])? << 4 | hex(pair[1])?;
+        }
+
+        Ok(Self{bytes})
+    }
 }
 
 impl fmt::Display for Hash
@@ -58,25 +83,7 @@ impl FromStr for Hash
 
     fn from_str(s: &str) -> Result<Self, Self::Err>
     {
-        if s.len() != 64 {
-            return Err(InvalidHash);
-        }
-
-        fn hex(c: u8) -> Result<u8, InvalidHash>
-        {
-            match c {
-                b'0' ..= b'9' => Ok(c - b'0'),
-                b'a' ..= b'f' => Ok(c - b'a' + 10),
-                _ => Err(InvalidHash),
-            }
-        }
-
-        let mut bytes = [0; 32];
-        for (i, pair) in s.as_bytes().chunks(2).enumerate() {
-            bytes[i] = hex(pair[0])? << 4 | hex(pair[1])?;
-        }
-
-        Ok(Self{bytes})
+        Hash::from_ascii(s.as_bytes())
     }
 }
 

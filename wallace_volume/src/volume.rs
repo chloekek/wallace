@@ -1,4 +1,5 @@
 use crate::Hash;
+use crate::InvalidHash;
 use std::fs::File;
 use std::fs::OpenOptions;
 use std::fs::Permissions;
@@ -243,6 +244,44 @@ impl Volume
 
         Ok(Some((file, size)))
     }
+
+    /// Return an iterator over the objects in the volume.
+    ///
+    /// This iterator will not open the objects,
+    /// it will only yield their hashes.
+    pub fn all(&self) -> Result<impl Iterator<Item=Result<Hash>>>
+    {
+        struct All
+        {
+            objects_dir: fsutil::Dir,
+        }
+
+        impl Iterator for All
+        {
+            type Item = Result<Hash>;
+
+            fn next(&mut self) -> Option<Self::Item>
+            {
+                match fsutil::readdir(&mut self.objects_dir) {
+                    Err(err) => Some(Err(err)),
+                    Ok(None) => None,
+                    Ok(Some(dirent)) => {
+                        let filename = dirent.d_name().to_bytes();
+                        match Hash::from_ascii(filename) {
+                            Ok(hash) => Some(Ok(hash)),
+                            Err(InvalidHash) => self.next(),
+                        }
+                    },
+                }
+            }
+        }
+
+        let open_flags = libc::O_RDONLY | libc::O_DIRECTORY;
+        let objects_directory =
+            fsutil::openat(&self.directory, "objects", open_flags, 0)?;
+        let objects_dir = fsutil::fdopendir(objects_directory)?;
+        Ok(All{objects_dir})
+    }
 }
 
 #[cfg(test)]
@@ -402,5 +441,37 @@ mod tests
         let nonexistent = Hash::compute_from_reader(&mut cursor).unwrap();
         let result = volume.get(nonexistent).unwrap();
         assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_all()
+    {
+        let parent = make_temp_dir("test_all").unwrap();
+
+        // Create path for volume.
+        let mut path_volume = parent;
+        path_volume.push("volume");
+
+        // Create and open the volume.
+        Volume::create(&path_volume).unwrap();
+        let volume = Volume::open(path_volume).unwrap();
+
+        // Write test objects.
+        let mut cursor1 = Cursor::new("hello");
+        let mut cursor2 = Cursor::new("你好");
+        let hash1 = volume.insert_from_reader(&mut cursor1).unwrap();
+        let hash2 = volume.insert_from_reader(&mut cursor2).unwrap();
+
+        // List the inserted objects.
+        let mut actual =
+            volume.all().unwrap()
+            .collect::<Result<Vec<_>>>()
+            .unwrap();
+
+        // Check that the expected hashes were returned.
+        let mut expected = [hash1, hash2];
+        expected.sort_by_key(|h| h.bytes);
+        actual.sort_by_key(|h| h.bytes);
+        assert_eq!(actual, expected);
     }
 }
