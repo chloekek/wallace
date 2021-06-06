@@ -1,7 +1,8 @@
 use std::str::FromStr;
 use wallace_volume::Hash;
 
-/// Abstract syntax tree for paths in the file system.
+/// Abstract syntax tree for paths that
+/// address objects or collections of objects.
 ///
 /// The [`FromStr`] impl takes [`str`],
 /// rather than [`Path`][`std::path::Path`],

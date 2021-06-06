@@ -1,6 +1,6 @@
 [workspace]
 members = [
-    "wallace_filelike",
+    "wallace_browse",
     "wallace_fsutil",
     "wallace_sha256",
     "wallace_volume",
