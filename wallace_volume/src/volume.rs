@@ -287,188 +287,102 @@ impl Volume
 #[cfg(test)]
 mod tests
 {
-    use std::env::temp_dir;
-    use std::fs::remove_dir_all;
-    use std::fs::write;
+    use crate::TestData;
     use std::io::Cursor;
     use std::io::ErrorKind::AlreadyExists;
-    use std::os::unix::fs::symlink;
     use super::*;
-
-    /// Create a directory for temporarily storing test data.
-    /// The directory will be removed at the start of the test,
-    /// which means it remains available for inspection after testing.
-    fn make_temp_dir(name: impl AsRef<Path>) -> Result<PathBuf>
-    {
-        let mut parent = temp_dir();
-        parent.push(name);
-        drop(remove_dir_all(&parent));
-        create_dir(&parent)?;
-        Ok(parent)
-    }
 
     #[test]
     fn test_create_exists()
     {
-        let parent = make_temp_dir("test_create_exists").unwrap();
-
-        // Create paths for to-be-existing paths.
-        let mut path_reg = parent.clone();
-        let mut path_dir = parent;
-        path_reg.push("regular");
-        path_dir.push("directory");
-
-        // Create to-be-existing paths.
-        File::create(&path_reg).unwrap();
-        create_dir(&path_dir).unwrap();
-
-        // Try to make volumes at existing paths.
-        let result_reg = Volume::create(path_reg);
-        let result_dir = Volume::create(path_dir);
-
-        // Should fail with EEXIST.
-        assert_eq!(result_reg.err().map(|e| e.kind()), Some(AlreadyExists));
-        assert_eq!(result_dir.err().map(|e| e.kind()), Some(AlreadyExists));
+        let test_data = TestData::new("test_create_exists").unwrap();
+        let result1 = Volume::create(test_data.volume1_path);
+        let result2 = Volume::create(test_data.regular1_path);
+        assert_eq!(result1.err().map(|e| e.kind()), Some(AlreadyExists));
+        assert_eq!(result2.err().map(|e| e.kind()), Some(AlreadyExists));
     }
 
     #[test]
-    fn test_insert_from_path_bad_type()
+    fn test_insert_from_path_non_reg()
     {
-        let parent = make_temp_dir("test_insert_from_path_bad_type").unwrap();
+        // Prepare the test.
+        let test_data = TestData::new("test_insert_from_path_non_reg").unwrap();
+        let volume = Volume::open(test_data.volume1_path).unwrap();
 
-        // Create paths for test files and volume.
-        let mut path_input_dir  = parent.clone();
-        let     path_input_chr  = "/dev/null";
-        let mut path_input_fifo = parent.clone();
-        let mut path_input_lnk  = parent.clone();
-        let mut path_input_sock = parent.clone();
-        let mut path_volume = parent;
-        path_input_dir.push("input_dir");
-        path_input_fifo.push("input_fifo");
-        path_input_lnk.push("input_lnk");
-        path_input_sock.push("input_sock");
-        path_volume.push("volume");
-
-        // Create and open the volume.
-        Volume::create(&path_volume).unwrap();
-        let volume = Volume::open(path_volume).unwrap();
-
-        // Create test files.
-        create_dir(&path_input_dir).unwrap();
-        fsutil::mknod(&path_input_fifo, libc::S_IFIFO  | 0o644, 0).unwrap();
-        symlink("/etc/passwd", &path_input_lnk).unwrap();
-        fsutil::mknod(&path_input_sock, libc::S_IFSOCK | 0o644, 0).unwrap();
-
-        // Check that these cannot be inserted.
-        assert!(volume.insert_from_path(path_input_dir) .is_err());
-        assert!(volume.insert_from_path(path_input_chr) .is_err());
-        assert!(volume.insert_from_path(path_input_fifo).is_err());
-        assert!(volume.insert_from_path(path_input_lnk) .is_err());
-        assert!(volume.insert_from_path(path_input_sock).is_err());
+        // Check that objects cannot be inserted.
+        assert!(volume.insert_from_path(&test_data.character1_path) .is_err());
+        assert!(volume.insert_from_path(&test_data.directory1_path) .is_err());
+        assert!(volume.insert_from_path(&test_data.fifo1_path).is_err());
+        assert!(volume.insert_from_path(&test_data.socket1_path) .is_err());
+        assert!(volume.insert_from_path(&test_data.symlink1_path).is_err());
     }
 
     #[test]
-    fn test_insert_from_reader_get()
+    fn test_insert_from_reader()
     {
-        let parent = make_temp_dir("test_insert_from_reader_get").unwrap();
+        // Prepare the test.
+        let test_data = TestData::new("test_insert_from_reader").unwrap();
+        let volume = Volume::open(test_data.volume1_path).unwrap();
 
-        // Create path for volume.
-        let mut path_volume = parent;
-        path_volume.push("volume");
-
-        // Create and open the volume.
-        Volume::create(&path_volume).unwrap();
-        let volume = Volume::open(path_volume).unwrap();
-
-        // Write test object.
-        let mut cursor = Cursor::new(b"hello");
+        // Insert the object.
+        let mut cursor = Cursor::new(&test_data.regular1_contents);
         let hash = volume.insert_from_reader(&mut cursor).unwrap();
 
-        // Read the inserted object.
+        // Get the object.
         let (mut read, size) = volume.get(hash).unwrap().unwrap();
         let mut data = Vec::new();
         read.read_to_end(&mut data).unwrap();
 
-        // Check that the object is as expected.
-        assert_eq!(data, b"hello");
-        assert_eq!(size, 5);
+        // Check the results.
+        assert_eq!(hash, test_data.regular1_hash);
+        assert_eq!(data, test_data.regular1_contents);
+        assert_eq!(size, test_data.regular1_contents.len() as u64);
     }
 
     #[test]
-    fn test_insert_from_path_get()
+    fn test_insert_from_path()
     {
-        let parent = make_temp_dir("test_insert_from_path_get").unwrap();
+        // Prepare the test.
+        let test_data = TestData::new("test_insert_from_path").unwrap();
+        let volume = Volume::open(test_data.volume1_path).unwrap();
 
-        // Create paths for test files and volume.
-        let mut path_input1 = parent.clone();
-        let mut path_input2 = parent.clone();
-        let mut path_volume = parent;
-        path_input1.push("input1");
-        path_input2.push("input2");
-        path_volume.push("volume");
+        // Insert the objects.
+        let hash1 = volume.insert_from_path(&test_data.regular1_path).unwrap();
+        let hash2 = volume.insert_from_path(&test_data.regular2_path).unwrap();
 
-        // Create and open the volume.
-        Volume::create(&path_volume).unwrap();
-        let volume = Volume::open(path_volume).unwrap();
+        // Get the objects.
+        let (mut read1, size1) = volume.get(hash1).unwrap().unwrap();
+        let (mut read2, size2) = volume.get(hash2).unwrap().unwrap();
+        let mut data1 = Vec::new();
+        let mut data2 = Vec::new();
+        read1.read_to_end(&mut data1).unwrap();
+        read2.read_to_end(&mut data2).unwrap();
 
-        // Write test files.
-        write(&path_input1, "hello").unwrap();
-        write(&path_input2, "你好").unwrap();
-        let hash1_object1 = volume.insert_from_path(&path_input1).unwrap();
-        let hash1_object2 = volume.insert_from_path(&path_input2).unwrap();
-
-        // Insert them again.
-        let hash2_object1 = volume.insert_from_path(&path_input1).unwrap();
-        let hash2_object2 = volume.insert_from_path(&path_input2).unwrap();
-
-        // Check that the hashes were the same.
-        assert_eq!(hash1_object1, hash2_object1);
-        assert_eq!(hash1_object2, hash2_object2);
-
-        // Check that we can retrieve the objects.
-        let examples = &[(hash1_object1, "hello"),
-                         (hash1_object2, "你好")];
-        for &(hash, expected_data) in examples {
-            let (mut read, actual_size) = volume.get(hash).unwrap().unwrap();
-            let mut actual_data = Vec::new();
-            read.read_to_end(&mut actual_data).unwrap();
-            assert_eq!(actual_data, expected_data.as_bytes());
-            assert_eq!(actual_size, expected_data.len() as u64);
-        }
-
-        // Check that getting a non-existing object succeeds.
-        let mut cursor = Cursor::new(&mut []);
-        let nonexistent = Hash::compute_from_reader(&mut cursor).unwrap();
-        let result = volume.get(nonexistent).unwrap();
-        assert!(result.is_none());
+        // Check the results.
+        assert_eq!(hash1, test_data.regular1_hash);
+        assert_eq!(hash2, test_data.regular2_hash);
+        assert_eq!(data1, test_data.regular1_contents);
+        assert_eq!(data2, test_data.regular2_contents);
+        assert_eq!(size1, test_data.regular1_contents.len() as u64);
+        assert_eq!(size2, test_data.regular2_contents.len() as u64);
     }
 
     #[test]
     fn test_all()
     {
-        let parent = make_temp_dir("test_all").unwrap();
+        // Prepare the test.
+        let test_data = TestData::new("test_all").unwrap();
+        let volume = Volume::open(test_data.volume1_path).unwrap();
 
-        // Create path for volume.
-        let mut path_volume = parent;
-        path_volume.push("volume");
+        // Insert the objects.
+        let hash1 = volume.insert_from_path(&test_data.regular1_path).unwrap();
+        let hash2 = volume.insert_from_path(&test_data.regular2_path).unwrap();
 
-        // Create and open the volume.
-        Volume::create(&path_volume).unwrap();
-        let volume = Volume::open(path_volume).unwrap();
+        // List the objects.
+        let all = volume.all().unwrap();
+        let mut actual = all.collect::<Result<Vec<_>>>().unwrap();
 
-        // Write test objects.
-        let mut cursor1 = Cursor::new("hello");
-        let mut cursor2 = Cursor::new("你好");
-        let hash1 = volume.insert_from_reader(&mut cursor1).unwrap();
-        let hash2 = volume.insert_from_reader(&mut cursor2).unwrap();
-
-        // List the inserted objects.
-        let mut actual =
-            volume.all().unwrap()
-            .collect::<Result<Vec<_>>>()
-            .unwrap();
-
-        // Check that the expected hashes were returned.
+        // Check the results..
         let mut expected = [hash1, hash2];
         expected.sort_by_key(|h| h.bytes);
         actual.sort_by_key(|h| h.bytes);

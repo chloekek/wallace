@@ -27,6 +27,15 @@ pub struct Hash
 
 impl Hash
 {
+    /// Compute the hash of the given bytes.
+    pub fn compute_from_bytes(b: &[u8]) -> Self
+    {
+        let mut sha256 = Sha256::new();
+        sha256.update(b);
+        let bytes = sha256.finalize();
+        Self{bytes}
+    }
+
     /// Read all bytes from the reader and compute their hash.
     pub fn compute_from_reader(r: &mut impl io::Read) -> io::Result<Self>
     {

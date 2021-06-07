@@ -52,3 +52,6 @@ pub use self::volume::*;
 
 mod hash;
 mod volume;
+
+#[cfg(test)] use self::testdata::*;
+#[cfg(test)] mod testdata;
