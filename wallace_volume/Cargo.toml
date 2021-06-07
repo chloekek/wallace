@@ -10,5 +10,8 @@ version = "=0.2.95"
 [dependencies.wallace_fsutil]
 path = "../wallace_fsutil"
 
+[dependencies.wallace_iterutil]
+path = "../wallace_iterutil"
+
 [dependencies.wallace_sha256]
 path = "../wallace_sha256"

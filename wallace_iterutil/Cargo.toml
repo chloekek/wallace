@@ -1,0 +1,4 @@
+[package]
+name = "wallace_iterutil"
+version = "0.0.0"
+edition = "2018"

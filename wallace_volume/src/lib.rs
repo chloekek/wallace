@@ -41,16 +41,19 @@
 //!
 //! # How to use this crate
 //!
-//! Volumes can be manipulated through the methods on the [`Volume`] type.
-//! See the documentation of these methods for more information.
+//! Volumes can be manipulated through the methods on the [`Volume`] type,
+//! as well as the functions exported directly by this crate.
+//! See their documentation for more information.
 
 #![doc(html_favicon_url = "../../../marketing/logo.svg")]
 #![doc(html_logo_url = "../../../marketing/logo.svg")]
 
 pub use self::hash::*;
+pub use self::union::*;
 pub use self::volume::*;
 
 mod hash;
+mod union;
 mod volume;
 
 #[cfg(test)] use self::testdata::*;

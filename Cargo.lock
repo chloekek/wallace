@@ -21,6 +21,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "wallace_iterutil"
+version = "0.0.0"
+
+[[package]]
 name = "wallace_sha256"
 version = "0.0.0"
 
@@ -30,5 +34,6 @@ version = "0.0.0"
 dependencies = [
  "libc",
  "wallace_fsutil",
+ "wallace_iterutil",
  "wallace_sha256",
 ]
